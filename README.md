@@ -1,46 +1,64 @@
-# Entropy-Model-Risk-Validation
+# Entropy-Based Model Risk Validation (Stress Testing) — 2020–2025
 
-Entropy-Based Model Risk Validation
-Credit Spread Stress Testing (2020–2025)
+This repo contains an independent **Model Risk / Model Validation** exercise that tests an **entropy-based (exponential tilting)** framework for robust stress measurement on **credit spread proxy losses** (HYG–LQD).  
+The goal is to evaluate **theoretical behavior, sensitivity to the robustness parameter (θ), stability across regimes, and forward-looking conservatism** (backtest) — aligned with typical **MRM validation** expectations.
 
-This repository contains an independent validation of a relative-entropy (exponential tilting) framework applied to credit spread proxy losses (HYG–LQD differential).
+---
 
-Objective
+## 1) What this project does
 
-To evaluate:
+Using daily market proxies (Yahoo Finance):
 
-Theoretical soundness of entropy-based robustness
+- **Credit stress proxy:** `HYG - LQD` (HY underperformance vs IG during stress)
+- **Equity proxy:** `SPY`
+- **Rates proxy:** `TLT`
+- **Vol proxy (optional):** `^VIX`
 
-Sensitivity to robustness parameter (θ)
+We compute loss series (positive = worse) and apply **entropy tilting**:
 
-Empirical behavior across macro regimes
+\[
+E_\theta[L] = \frac{\sum_i L_i e^{\theta L_i}}{\sum_i e^{\theta L_i}}
+\]
 
-Forward-looking conservatism via backtesting
+where:
+- `L` = loss observations
+- `θ` = robustness parameter (higher θ → more tail emphasis)
 
-Governance implications for Model Risk Management (MRM)
+---
 
-Key Findings
+## 2) Validation questions answered (MRM style)
 
-Entropy interpolates smoothly between mean and tail risk.
+This repo demonstrates:
 
-Around θ ≈ 9–10, losses approximate CVaR behavior.
+- **Benchmarking:** How entropy-adjusted loss compares to **Mean / VaR(99%) / CVaR(99%)**
+- **Sensitivity & Fragility:** How loss grows with θ and where amplification becomes nonlinear
+- **Regime Stability:** Whether results are stable across macro subperiods (2020–21, 2022–23, 2024–25)
+- **Backtesting:** Whether entropy estimates are conservative vs realized forward stress (rolling 2Y train → 1M test)
 
-Static θ underestimates forward stress.
+---
 
-Dynamic calibration and governance controls are essential.
+## 3) Key outputs (charts)
 
-Charts Included
+The code produces the following PNG charts in `figures/`:
 
-Entropy-Tilted Expected Loss vs Theta
+1. `entropy_vs_theta.png`  
+   **Entropy-Tilted Expected Loss vs θ** (shows convex amplification)
 
-Entropy vs VaR vs CVaR
+2. `entropy_vs_var_cvar.png`  
+   **Entropy vs Mean / VaR(99%) / CVaR(99%)** (benchmark comparison)
 
-Rolling Backtest: Entropy vs Realized Stress
+3. `stability_across_regimes.png`  
+   **Regime stability** across subperiods
 
-Tools Used
+4. `backtest_entropy_vs_realized.png`  
+   **Backtest:** entropy prediction vs realized next-month maximum loss
 
-Python (NumPy, Pandas, Matplotlib)
+5. `rolling_corr_vs_spy.png` *(optional)*  
+   **Rolling correlation regime shifts** vs SPY
 
-Market data (Yahoo Finance proxies)
+---
 
-Rolling backtesting methodology
+## 4) Repository structure
+
+Recommended structure:
+
