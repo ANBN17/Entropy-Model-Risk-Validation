@@ -118,20 +118,7 @@ print("Base mean loss:", round(base_mean, 6))
 print("Historical 99% loss:", round(tail_99, 6))
 print("Tilted loss at theta=6:", round(tilted_expectation(y, 6.0), 6))
 print("\nStress co-moves (avg losses on worst 10 SPY stress days):\n", stress_comove.round(6))
-[*********************100%***********************]  5 of 5 completed
-No description has been provided for this image
-No description has been provided for this image
-No description has been provided for this image
-No description has been provided for this image
-Base mean loss: 0.0037
-Historical 99% loss: 0.272934
-Tilted loss at theta=6: 0.121342
 
-Stress co-moves (avg losses on worst 10 SPY stress days):
- Credit_SpreadProxy_Loss    0.176042
-Rates_Loss                 0.055890
-Equity_Loss                0.033630
-dtype: float64
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -258,17 +245,3 @@ plt.show()
 # Simple hit-rate: how often pred >= realized?
 hit_rate = (bt["pred_entropy"] >= bt["realized_next_month_max"]).mean()
 print("Conservatism hit-rate (pred >= realized):", round(hit_rate, 3))
-No description has been provided for this image
-No description has been provided for this image
-Tilted loss @theta=6: 0.12134165048235501
-Tilted loss @theta=10: 0.4453961322972741
-Max dLoss/dTheta: 0.09636680909666118
-Base mean loss: 0.003700
-VaR 99%: 0.272934
-CVaR 99%: 0.442888
-Entropy losses: {2: 0.021391, 4: 0.0533, 6: 0.121342, 8: 0.257755, 10: 0.445396}
-No description has been provided for this image
-No description has been provided for this image
-<Figure size 640x480 with 0 Axes>
-No description has been provided for this image
-Conservatism hit-rate (pred >= realized): 0.237
