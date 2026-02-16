@@ -1,207 +1,247 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
+## Niraj Neupane
 
-# C extensions
-*.so
+# pip install yfinance pandas numpy matplotlib scipy
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import yfinance as yf
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+# ----------------------------
+# 1) Download market proxies
+# ----------------------------
+START = "2020-01-01"
+tickers = {
+    "SPY": "SPY",      # equity
+    "VIX": "^VIX",     # vol
+    "TLT": "TLT",      # long rates proxy
+    "HYG": "HYG",      # high yield
+    "LQD": "LQD"       # investment grade
+}
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+px = yf.download(list(tickers.values()), start=START, auto_adjust=True)["Close"]
+px.columns = list(tickers.keys())
+px = px.dropna()
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
+rets = px.pct_change().dropna()
 
-# Translations
-*.mo
-*.pot
+# Loss series (positive = worse)
+loss = pd.DataFrame(index=rets.index)
+loss["Equity_Loss"] = -rets["SPY"]
+loss["Rates_Loss"]  = -rets["TLT"]
+loss["Credit_SpreadProxy_Loss"] = -(rets["HYG"] - rets["LQD"])  # HY underperforms IG in stress
+loss = loss.dropna()
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
+# ----------------------------
+# 2) Entropy tilting functions (Skoglund-style)
+# ----------------------------
+def tilted_weights(y, theta):
+    y = np.asarray(y, dtype=float)
+    z = theta * y
+    z = z - np.max(z)                 # numerical stability
+    w = np.exp(z)
+    return w / w.sum()
 
-# Flask stuff:
-instance/
-.webassets-cache
+def tilted_expectation(y, theta):
+    w = tilted_weights(y, theta)
+    return float((w * y).sum())
 
-# Scrapy stuff:
-.scrapy
+# ----------------------------
+# 3) Compute tilted loss vs theta
+# ----------------------------
+theta_grid = np.linspace(0, 10, 51)
+series = "Credit_SpreadProxy_Loss"     # main paper-aligned proxy (stress losses)
+y = loss[series].values
 
-# Sphinx documentation
-docs/_build/
+tilted_curve = np.array([tilted_expectation(y, th) for th in theta_grid])
+base_mean = y.mean()
+tail_99 = np.quantile(y, 0.99)
 
-# PyBuilder
-.pybuilder/
-target/
+# ----------------------------
+# 4) Stress window co-moves (empirical validation)
+# ----------------------------
+worst10 = loss["Equity_Loss"].sort_values(ascending=False).head(10).index
+stress_comove = loss.loc[worst10].mean().sort_values(ascending=False)
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# ----------------------------
+# 5) Rolling correlation (fixed, no xs)
+# ----------------------------
+window = 63
+roll_corr_tlt = rets["SPY"].rolling(window).corr(rets["TLT"])
+roll_corr_hyg = rets["SPY"].rolling(window).corr(rets["HYG"])
+roll_corr_lqd = rets["SPY"].rolling(window).corr(rets["LQD"])
 
-# IPython
-profile_default/
-ipython_config.py
+# ----------------------------
+# 6) CHARTS (what you need)
+# ----------------------------
 
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+# Chart A: Base vs Tail vs Entropy-Tilted Expected Loss (core paper validation)
+plt.figure()
+plt.plot(theta_grid, tilted_curve, marker="o", markersize=3, label="Entropy-tilted expected loss")
+plt.axhline(base_mean, linestyle="--", label="Base mean loss")
+plt.axhline(tail_99, linestyle="--", label="Historical 99% loss")
+plt.title(f"Entropy-Tilted Expected Loss vs Theta — {series}")
+plt.xlabel("Theta (robustness / entropy budget)")
+plt.ylabel("Loss")
+plt.legend()
+plt.show()
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
+# Chart B: Loss distribution (shows tail mass the tilt will emphasize)
+plt.figure()
+plt.hist(y, bins=80, density=True)
+plt.title(f"Loss Distribution — {series}")
+plt.xlabel("Loss (positive = worse)")
+plt.ylabel("Density")
+plt.show()
 
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
+# Chart C: Stress co-moves table as a bar chart (State Street MRM-friendly)
+plt.figure()
+stress_comove.plot(kind="bar")
+plt.title("Average Losses During Worst 10 Equity Stress Days (Co-moves)")
+plt.xlabel("Risk proxy")
+plt.ylabel("Average loss")
+plt.show()
 
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-#poetry.toml
+# Chart D: Rolling correlations vs SPY (regime shift / robustness narrative)
+plt.figure()
+plt.plot(roll_corr_tlt.index, roll_corr_tlt, label="TLT vs SPY")
+plt.plot(roll_corr_hyg.index, roll_corr_hyg, label="HYG vs SPY")
+plt.plot(roll_corr_lqd.index, roll_corr_lqd, label="LQD vs SPY")
+plt.title(f"Rolling {window}d Correlation vs SPY (Regime Shifts)")
+plt.xlabel("Date")
+plt.ylabel("Correlation")
+plt.legend()
+plt.show()
 
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
-#pdm.lock
-#pdm.toml
-.pdm-python
-.pdm-build/
+# Print key numbers for your memo later
+print("Base mean loss:", round(base_mean, 6))
+print("Historical 99% loss:", round(tail_99, 6))
+print("Tilted loss at theta=6:", round(tilted_expectation(y, 6.0), 6))
+print("\nStress co-moves (avg losses on worst 10 SPY stress days):\n", stress_comove.round(6))
 
-# pixi
-#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
-#pixi.lock
-#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
-.pixi
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
+series = "Credit_SpreadProxy_Loss"   # focus series
+y = loss[series].dropna().values
 
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
+theta_grid = np.linspace(0, 15, 76)  # 0..15
+tilted_curve = np.array([tilted_expectation(y, th) for th in theta_grid])
 
-# SageMath parsed files
-*.sage.py
+# Numerical derivative (fragility)
+dL = np.gradient(tilted_curve, theta_grid)
 
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+plt.figure()
+plt.plot(theta_grid, tilted_curve)
+plt.title(f"Entropy-Tilted Expected Loss vs Theta (0–15) — {series}")
+plt.xlabel("Theta")
+plt.ylabel("Tilted expected loss")
+plt.show()
 
-# Spyder project settings
-.spyderproject
-.spyproject
+plt.figure()
+plt.plot(theta_grid, dL)
+plt.title(f"Fragility: d(Tilted Loss)/dTheta — {series}")
+plt.xlabel("Theta")
+plt.ylabel("Marginal sensitivity")
+plt.show()
 
-# Rope project settings
-.ropeproject
+print("Tilted loss @theta=6:", tilted_expectation(y, 6.0))
+print("Tilted loss @theta=10:", tilted_expectation(y, 10.0))
+print("Max dLoss/dTheta:", dL.max())
 
-# mkdocs documentation
-/site
+alpha = 0.99
+y = loss[series].dropna().values
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+VaR = np.quantile(y, alpha)
+CVaR = y[y >= VaR].mean()  # Expected shortfall beyond VaR
 
-# Pyre type checker
-.pyre/
+theta_list = [2, 4, 6, 8, 10]
+entropy_losses = {th: tilted_expectation(y, th) for th in theta_list}
 
-# pytype static type analyzer
-.pytype/
+print(f"Base mean loss: {y.mean():.6f}")
+print(f"VaR {int(alpha*100)}%: {VaR:.6f}")
+print(f"CVaR {int(alpha*100)}%: {CVaR:.6f}")
+print("Entropy losses:", {k: round(v,6) for k,v in entropy_losses.items()})
 
-# Cython debug symbols
-cython_debug/
+# Chart: compare on one plot
+plt.figure()
+plt.axhline(y.mean(), linestyle="--", label="Base mean")
+plt.axhline(VaR, linestyle="--", label=f"VaR {int(alpha*100)}%")
+plt.axhline(CVaR, linestyle="--", label=f"CVaR {int(alpha*100)}%")
+plt.plot(list(entropy_losses.keys()), list(entropy_losses.values()), marker="o", label="Entropy-tilted")
+plt.title(f"Entropy vs VaR vs CVaR — {series}")
+plt.xlabel("Theta")
+plt.ylabel("Loss")
+plt.legend()
+plt.show()
 
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+def subsample_stats(loss_df, series, start, end, theta=6.0, alpha=0.99):
+    sub = loss_df.loc[start:end, series].dropna().values
+    if len(sub) < 50:
+        return None
+    VaR = np.quantile(sub, alpha)
+    CVaR = sub[sub >= VaR].mean()
+    return {
+        "start": start,
+        "end": end,
+        "n": len(sub),
+        "mean": sub.mean(),
+        "VaR99": VaR,
+        "CVaR99": CVaR,
+        f"Entropy(theta={theta})": tilted_expectation(sub, theta)
+    }
 
-# Abstra
-# Abstra is an AI-powered process automation framework.
-# Ignore directories containing user credentials, local state, and settings.
-# Learn more at https://abstra.io/docs
-.abstra/
+periods = [
+    ("2020-01-01","2021-12-31"),
+    ("2022-01-01","2023-12-31"),
+    ("2024-01-01","2025-12-31"),
+]
 
-# Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
+rows = []
+for s,e in periods:
+    out = subsample_stats(loss, series, s, e, theta=6.0)
+    if out:
+        rows.append(out)
 
-# Ruff stuff:
-.ruff_cache/
+stab = pd.DataFrame(rows)
+stab
 
-# PyPI configuration file
-.pypirc
+plt.figure()
+plt.plot(stab["start"], stab["VaR99"], marker="o", label="VaR99")
+plt.plot(stab["start"], stab["CVaR99"], marker="o", label="CVaR99")
+plt.plot(stab["start"], stab["Entropy(theta=6.0)"], marker="o", label="Entropy (theta=6)")
+plt.title(f"Stability Across Regimes — {series}")
+plt.xlabel("Period start")
+plt.ylabel("Loss")
+plt.legend()
+plt.show()
 
-# Cursor
-#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
-#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
-#  refer to https://docs.cursor.com/context/ignore-files
-.cursorignore
-.cursorindexingignore
+lookback_days = 252*2   # 2 years
+horizon_days = 21       # ~1 month
+theta_bt = 6.0
 
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
+s = loss[series].dropna()
+
+dates = s.index
+bt_rows = []
+
+for i in range(lookback_days, len(s) - horizon_days):
+    train = s.iloc[i-lookback_days:i].values
+    test = s.iloc[i:i+horizon_days].values
+
+    pred = tilted_expectation(train, theta_bt)          # robust expected loss estimate
+    realized = np.max(test)                             # realized worst loss over next month
+    bt_rows.append([dates[i], pred, realized])
+
+bt = pd.DataFrame(bt_rows, columns=["date","pred_entropy","realized_next_month_max"]).set_index("date")
+
+plt.figure()
+bt[["pred_entropy","realized_next_month_max"]].rolling(63).mean().plot(title="Backtest (63d avg): Entropy Prediction vs Realized Next-Month Max")
+plt.xlabel("Date")
+plt.ylabel("Loss")
+plt.show()
+
+# Simple hit-rate: how often pred >= realized?
+hit_rate = (bt["pred_entropy"] >= bt["realized_next_month_max"]).mean()
+print("Conservatism hit-rate (pred >= realized):", round(hit_rate, 3))
