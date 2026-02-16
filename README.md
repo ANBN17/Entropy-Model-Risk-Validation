@@ -62,8 +62,6 @@ The code produces the following PNG charts in `figures/`:
 
 Recommended structure:
 
----
-
 ## 5) How to run
 
 ### Option A — Notebook
