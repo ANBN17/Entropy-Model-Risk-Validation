@@ -62,3 +62,18 @@ The code produces the following PNG charts in `figures/`:
 
 Recommended structure:
 
+---
+
+## 5) How to run
+
+### Option A — Notebook
+Open and run:
+`notebooks/entropy_model_validation.ipynb`
+
+### Option B — Script
+```bash
+pip install -r requirements.txt
+python src/run_validation.py
+
+
+
